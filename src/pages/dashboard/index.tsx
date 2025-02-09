@@ -85,6 +85,7 @@ interface Incident {
   severity: string;
   status: string;
   description: string;
+  photoUrl?: string;
   reportedBy: {
     name: string;
     email: string;
@@ -201,7 +202,7 @@ export default function Dashboard() {
   };
 
   const getSeverityColor = (severity: string) => {
-    switch (severity.toLowerCase()) {
+    switch (String(severity).toLowerCase()) {
       case 'critical':
         return 'error';
       case 'high':
@@ -216,7 +217,7 @@ export default function Dashboard() {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
+    switch (String(status).toLowerCase()) {
       case 'resolved':
         return 'success';
       case 'in_progress':
@@ -256,11 +257,17 @@ export default function Dashboard() {
   };
 
   const filteredIncidents = incidents.filter((incident) => {
+    if (!searchQuery) return true;
+    
     const searchLower = searchQuery.toLowerCase();
+    const title = String(incident.title || '');
+    const location = String(incident.location?.address || '');
+    const type = String(incident.type || '');
+
     return (
-      incident.title.toLowerCase().includes(searchLower) ||
-      incident.location.address.toLowerCase().includes(searchLower) ||
-      incident.type.toLowerCase().includes(searchLower)
+      title.toLowerCase().includes(searchLower) ||
+      location.toLowerCase().includes(searchLower) ||
+      type.toLowerCase().includes(searchLower)
     );
   });
 
@@ -402,38 +409,54 @@ export default function Dashboard() {
               <Card>
                 <CardContent>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                    <Typography variant="h6">{incident.title}</Typography>
-                    <Chip
-                      label={`${incident.severity} Severity`}
-                      color={getSeverityColor(incident.severity)}
-                      size="small"
-                    />
+                    <Typography variant="h6" component="div">
+                      {incident.title}
+                    </Typography>
+                    <Box>
+                      <Chip
+                        label={String(incident.severity || 'Unknown').toUpperCase()}
+                        color={getSeverityColor(incident.severity)}
+                        size="small"
+                        sx={{ mr: 1 }}
+                      />
+                      <Chip
+                        label={String(incident.status || 'Pending').replace('_', ' ').toUpperCase()}
+                        color={getStatusColor(incident.status)}
+                        size="small"
+                      />
+                    </Box>
                   </Box>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Location: {incident.location.address}
+
+                  {incident.photoUrl && (
+                    <Box sx={{ mb: 2, maxWidth: '100%', overflow: 'hidden' }}>
+                      <img
+                        src={incident.photoUrl}
+                        alt={incident.title}
+                        style={{
+                          width: '100%',
+                          maxHeight: '300px',
+                          objectFit: 'cover',
+                          borderRadius: '4px'
+                        }}
+                      />
+                    </Box>
+                  )}
+
+                  <Typography color="textSecondary" gutterBottom>
+                    <strong>Location:</strong> {incident.location.address}
                   </Typography>
-                  <Typography variant="body1" paragraph>
-                    {incident.description}
+                  <Typography color="textSecondary" gutterBottom>
+                    <strong>Type:</strong> {incident.type}
                   </Typography>
-                  <Box sx={{ mt: 2 }}>
-                    <Chip
-                      label={incident.status}
-                      color={getStatusColor(incident.status)}
-                      size="small"
-                      sx={{ mr: 1 }}
-                    />
-                    <Chip
-                      label={incident.type}
-                      variant="outlined"
-                      size="small"
-                      sx={{ mr: 1 }}
-                    />
-                    <Chip
-                      label={`Reported by: ${incident.reportedBy.name}`}
-                      variant="outlined"
-                      size="small"
-                    />
-                  </Box>
+                  {incident.description && (
+                    <Typography color="textSecondary" paragraph>
+                      <strong>Description:</strong> {incident.description}
+                    </Typography>
+                  )}
+                  <Typography variant="body2" color="textSecondary">
+                    Reported by {incident.reportedBy.name} on{' '}
+                    {new Date(incident.createdAt).toLocaleDateString()}
+                  </Typography>
                 </CardContent>
                 <CardActions>
                   <Button

@@ -45,6 +45,16 @@ export default function NewIncident() {
     severity: '',
     description: '',
   });
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setPhoto(file);
+      setPhotoPreview(URL.createObjectURL(file));
+    }
+  };
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -79,16 +89,21 @@ export default function NewIncident() {
     }
 
     try {
+      // Create FormData object to handle file upload
+      const submitData = new FormData();
+      submitData.append('title', formData.title);
+      submitData.append('location', formData.location);
+      submitData.append('type', formData.type);
+      submitData.append('severity', formData.severity);
+      submitData.append('description', formData.description);
+      if (photo) {
+        submitData.append('photo', photo);
+      }
+
       const response = await fetch('/api/incidents', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...formData,
-          userEmail: session.user.email, // Add user email from session
-        }),
-        credentials: 'include', // Important: include credentials for session
+        body: submitData,
+        credentials: 'include',
       });
 
       const data = await response.json();
@@ -183,6 +198,49 @@ export default function NewIncident() {
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             sx={{ mb: 2 }}
           />
+
+          <Box sx={{ mb: 2 }}>
+            <input
+              accept="image/*"
+              style={{ display: 'none' }}
+              id="photo-upload"
+              type="file"
+              onChange={handlePhotoChange}
+            />
+            <label htmlFor="photo-upload">
+              <Button
+                variant="outlined"
+                component="span"
+                fullWidth
+              >
+                Upload Photo (Optional)
+              </Button>
+            </label>
+            {photoPreview && (
+              <Box sx={{ mt: 2, position: 'relative' }}>
+                <img
+                  src={photoPreview}
+                  alt="Preview"
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '200px',
+                    objectFit: 'contain'
+                  }}
+                />
+                <Button
+                  size="small"
+                  color="error"
+                  onClick={() => {
+                    setPhoto(null);
+                    setPhotoPreview(null);
+                  }}
+                  sx={{ mt: 1 }}
+                >
+                  Remove Photo
+                </Button>
+              </Box>
+            )}
+          </Box>
 
           <Button
             type="submit"

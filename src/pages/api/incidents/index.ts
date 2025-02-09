@@ -3,6 +3,21 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]';
 import { connectToDatabase } from '../../../lib/db';
 import { ObjectId } from 'mongodb';
+import formidable from 'formidable';
+import fs from 'fs';
+import path from 'path';
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+// Ensure upload directory exists
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 export default async function handler(
   req: NextApiRequest,
@@ -37,7 +52,7 @@ export default async function handler(
           };
         }
 
-        const [incidents, total] = await Promise.all([
+        const [rawIncidents, total] = await Promise.all([
           db.collection('incidents')
             .find(query)
             .sort({ createdAt: -1 })
@@ -46,6 +61,26 @@ export default async function handler(
             .toArray(),
           db.collection('incidents').countDocuments(query)
         ]);
+
+        // Ensure all incidents have the required fields with proper types
+        const incidents = rawIncidents.map(incident => ({
+          _id: incident._id,
+          title: String(incident.title || ''),
+          location: {
+            address: String(incident.location?.address || '')
+          },
+          type: String(incident.type || ''),
+          severity: String(incident.severity || ''),
+          status: String(incident.status || 'pending'),
+          description: String(incident.description || ''),
+          photoUrl: incident.photoUrl || null,
+          reportedBy: {
+            name: String(incident.reportedBy?.name || ''),
+            email: String(incident.reportedBy?.email || '')
+          },
+          createdAt: incident.createdAt ? new Date(incident.createdAt).toISOString() : new Date().toISOString(),
+          comments: Array.isArray(incident.comments) ? incident.comments : []
+        }));
 
         return res.status(200).json({
           incidents,
@@ -65,23 +100,24 @@ export default async function handler(
     // POST request to create a new incident
     if (req.method === 'POST') {
       try {
-        console.log('Received incident data:', req.body);
-        console.log('Session:', session);
+        const form = formidable({
+          uploadDir,
+          keepExtensions: true,
+          maxFileSize: 5 * 1024 * 1024, // 5MB limit
+        });
 
-        const {
-          title,
-          location,
-          type,
-          severity,
-          description,
-        } = req.body;
+        const [fields, files] = await new Promise((resolve, reject) => {
+          form.parse(req, (err, fields, files) => {
+            if (err) reject(err);
+            resolve([fields, files]);
+          });
+        });
 
         // Validate required fields
-        if (!title || !location || !type || !severity) {
-          console.error('Missing required fields');
+        if (!fields.title || !fields.location || !fields.type || !fields.severity) {
           return res.status(400).json({
             message: 'Missing required fields',
-            receivedData: { title, location, type, severity }
+            receivedData: { title: fields.title, location: fields.location, type: fields.type, severity: fields.severity }
           });
         }
 
@@ -91,19 +127,26 @@ export default async function handler(
         });
 
         if (!user) {
-          console.error('User not found:', session.user.email);
           return res.status(404).json({ message: 'User not found' });
         }
 
+        let photoUrl = null;
+        if (files.photo) {
+          const file = Array.isArray(files.photo) ? files.photo[0] : files.photo;
+          const fileName = path.basename(file.filepath);
+          photoUrl = `/uploads/${fileName}`;
+        }
+
         const incident = {
-          title,
+          title: fields.title,
           location: {
-            address: location,
+            address: fields.location,
             coordinates: null,
           },
-          type,
-          severity,
-          description: description || '',
+          type: fields.type,
+          severity: fields.severity,
+          description: fields.description || '',
+          photoUrl,
           status: 'pending',
           reportedBy: {
             _id: user._id,
@@ -115,21 +158,17 @@ export default async function handler(
           updatedAt: new Date(),
         };
 
-        console.log('Creating incident:', incident);
-
         const result = await db.collection('incidents').insertOne(incident);
         
-        console.log('Incident created successfully:', result.insertedId);
-
         return res.status(201).json({
           message: 'Incident created successfully',
           incident: { ...incident, _id: result.insertedId },
         });
       } catch (error) {
-        console.error('Error in POST handler:', error);
+        console.error('Error creating incident:', error);
         return res.status(500).json({
-          message: 'Error creating incident',
-          error: error.message
+          message: 'Could not create incident',
+          error: error.message,
         });
       }
     }
