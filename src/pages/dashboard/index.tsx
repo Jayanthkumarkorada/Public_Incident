@@ -127,6 +127,7 @@ export default function Dashboard() {
   const [newStatus, setNewStatus] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [severityFilter, setSeverityFilter] = useState('all');
+  const [statusUpdateLoading, setStatusUpdateLoading] = useState(false);
 
   const fetchIncidents = async () => {
     try {
@@ -251,8 +252,9 @@ export default function Dashboard() {
     
     switch (severity.toLowerCase()) {
       case 'critical':
+      case 'high':
         return 'error';
-      case 'moderate':
+      case 'medium':
         return 'warning';
       case 'low':
         return 'success';
@@ -323,26 +325,47 @@ export default function Dashboard() {
   });
 
   const handleStatusUpdate = async (incidentId: string) => {
+    if (!newStatus) return;
+    
     try {
+      setStatusUpdateLoading(true);
       const response = await fetch(`/api/incidents/${incidentId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({ status: newStatus }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to update status');
+      let data;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        data = await response.json();
+      } else {
+        // If response is not JSON, get the text and throw it
+        const text = await response.text();
+        throw new Error(`Server error: ${text.slice(0, 200)}`);
       }
 
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update status');
+      }
+
+      // Show success message
+      setSuccess('Incident status updated successfully');
+      
       // Refresh incidents after update
-      fetchIncidents();
+      await fetchIncidents();
+      
+      // Reset state
       setStatusUpdateIncident(null);
       setNewStatus('');
     } catch (error) {
       console.error('Error updating status:', error);
-      setError('Failed to update incident status');
+      setError(error.message || 'Failed to update incident status');
+    } finally {
+      setStatusUpdateLoading(false);
     }
   };
 
@@ -535,6 +558,20 @@ export default function Dashboard() {
                       >
                         {incident.title}
                       </Typography>
+                      {incident.photoUrl && (
+                        <Box sx={{ mb: 2, maxWidth: '100%', overflow: 'hidden', borderRadius: 1 }}>
+                          <img
+                            src={incident.photoUrl}
+                            alt="Incident photo"
+                            style={{
+                              width: '100%',
+                              maxHeight: '300px',
+                              objectFit: 'cover',
+                              borderRadius: '4px'
+                            }}
+                          />
+                        </Box>
+                      )}
                       <Grid container spacing={2} sx={{ mb: 2 }}>
                         <Grid item xs={12} sm={6}>
                           <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center' }}>
@@ -830,6 +867,7 @@ export default function Dashboard() {
               value={newStatus}
               onChange={(e) => setNewStatus(e.target.value)}
               label="New Status"
+              disabled={statusUpdateLoading}
             >
               <MenuItem value="pending">Pending</MenuItem>
               <MenuItem value="in_progress">In Progress</MenuItem>
@@ -843,6 +881,7 @@ export default function Dashboard() {
               setStatusUpdateIncident(null);
               setNewStatus('');
             }}
+            disabled={statusUpdateLoading}
           >
             Cancel
           </Button>
@@ -850,9 +889,16 @@ export default function Dashboard() {
             onClick={() => handleStatusUpdate(statusUpdateIncident._id)}
             variant="contained" 
             color="primary"
-            disabled={!newStatus}
+            disabled={!newStatus || statusUpdateLoading}
           >
-            Update
+            {statusUpdateLoading ? (
+              <>
+                <CircularProgress size={20} sx={{ mr: 1 }} />
+                Updating...
+              </>
+            ) : (
+              'Update'
+            )}
           </Button>
         </DialogActions>
       </Dialog>

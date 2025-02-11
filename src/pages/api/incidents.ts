@@ -3,6 +3,15 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from './auth/[...nextauth]';
 import { connectToDatabase } from '../../lib/db';
 import { ObjectId } from 'mongodb';
+import formidable from 'formidable';
+import fs from 'fs';
+import path from 'path';
+
+export const config = {
+  api: {
+    bodyParser: false, // Disable the default body parser
+  },
+};
 
 export default async function handler(
   req: NextApiRequest,
@@ -59,6 +68,73 @@ export default async function handler(
     }
   }
 
+  // Handle POST request for creating new incidents
+  if (req.method === 'POST') {
+    try {
+      const form = formidable({
+        uploadDir: path.join(process.cwd(), 'public', 'uploads'),
+        keepExtensions: true,
+        maxFileSize: 5 * 1024 * 1024, // 5MB
+      });
+
+      // Ensure upload directory exists
+      const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
+      // Parse the form data
+      const [fields, files] = await new Promise((resolve, reject) => {
+        form.parse(req, (err, fields, files) => {
+          if (err) reject(err);
+          resolve([fields, files]);
+        });
+      });
+
+      // Validate required fields
+      if (!fields.title || !fields.location || !fields.type) {
+        return res.status(400).json({
+          message: 'Missing required fields',
+          details: {
+            title: !fields.title ? 'Title is required' : null,
+            location: !fields.location ? 'Location is required' : null,
+            type: !fields.type ? 'Incident type is required' : null,
+          }
+        });
+      }
+
+      // Create new incident
+      const newIncident = {
+        title: fields.title[0],
+        description: fields.description ? fields.description[0] : '',
+        location: {
+          address: fields.location[0],
+          coordinates: null // You can add geocoding here if needed
+        },
+        type: fields.type[0], // Store as type to match the interface
+        severity: fields.severity ? fields.severity[0] : 'medium',
+        photoUrl: files.photo ? `/uploads/${path.basename(files.photo[0].filepath)}` : null,
+        reportedBy: {
+          email: session.user.email,
+          name: session.user.name
+        },
+        status: 'pending',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      const result = await db.collection('incidents').insertOne(newIncident);
+
+      return res.status(201).json({
+        message: 'Incident reported successfully',
+        incident: { ...newIncident, _id: result.insertedId }
+      });
+    } catch (error) {
+      console.error('Error creating incident:', error);
+      return res.status(500).json({ message: 'Error creating incident' });
+    }
+  }
+
   // Handle DELETE request
   if (req.method === 'DELETE') {
     const { id } = req.query;
@@ -103,6 +179,6 @@ export default async function handler(
   }
 
   // Return 405 for other methods
-  res.setHeader('Allow', ['GET', 'DELETE']);
+  res.setHeader('Allow', ['GET', 'POST', 'DELETE']);
   return res.status(405).json({ message: `Method ${req.method} not allowed` });
 }
