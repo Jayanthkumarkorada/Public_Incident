@@ -23,12 +23,17 @@ import {
   ListItemText,
   Divider,
   Alert,
-  AppBar,
-  Toolbar,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
+  Avatar,
+  TableContainer,
+  Table,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableBody,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -39,6 +44,10 @@ import {
   Send as SendIcon,
   LocalHospital,
   Analytics as AnalyticsIcon,
+  Logout as LogoutIcon,
+  Person as PersonIcon,
+  LocationOn as LocationOnIcon,
+  Category as CategoryIcon,
 } from '@mui/icons-material';
 import { useRouter } from 'next/router';
 
@@ -101,6 +110,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [pageSize] = useState(10);
@@ -113,6 +123,9 @@ export default function Dashboard() {
   const [loadingFacilities, setLoadingFacilities] = useState(false);
   const [statusUpdateIncident, setStatusUpdateIncident] = useState(null);
   const [newStatus, setNewStatus] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [severityFilter, setSeverityFilter] = useState('all');
+  const [statusUpdateLoading, setStatusUpdateLoading] = useState(false);
 
   const fetchIncidents = async () => {
     try {
@@ -147,21 +160,44 @@ export default function Dashboard() {
     }
   }, [status, router, page, searchQuery]);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (incidentId: string) => {
+    if (!confirm('Are you sure you want to delete this incident?')) {
+      return;
+    }
+
     try {
-      const response = await fetch(`/api/incidents?id=${id}`, {
+      const response = await fetch(`/api/incidents?id=${incidentId}`, {
         method: 'DELETE',
-        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include'
       });
 
       if (!response.ok) {
-        throw new Error('Failed to delete incident');
+        let errorMessage = 'Failed to delete incident';
+        try {
+          const data = await response.json();
+          errorMessage = data.message || errorMessage;
+        } catch (e) {
+          // If response is not JSON, use status text
+          errorMessage = response.statusText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
-      fetchIncidents();
-    } catch (err) {
-      console.error('Error deleting incident:', err);
-      setError('Failed to delete incident');
+      // Remove the deleted incident from the state
+      setIncidents(prevIncidents => 
+        prevIncidents.filter(incident => incident._id !== incidentId)
+      );
+
+      // Show success message
+      setSuccess('Incident deleted successfully');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      console.error('Error deleting incident:', error);
+      setError(error.message || 'Failed to delete incident');
+      setTimeout(() => setError(''), 3000);
     }
   };
 
@@ -201,10 +237,19 @@ export default function Dashboard() {
     }
   };
 
-  const getSeverityColor = (severity: string) => {
-    switch (String(severity).toLowerCase()) {
+  // Helper function to safely get severity text
+  const getSeverityText = (severity: any): string => {
+    return (severity && typeof severity === 'string') ? severity.toUpperCase() : 'UNKNOWN';
+  };
+
+  // Helper function to get severity color
+  const getSeverityColor = (severity: any): "error" | "warning" | "success" | "default" => {
+    if (!severity || typeof severity !== 'string') {
+      return 'default';
+    }
+    
+    switch (severity.toLowerCase()) {
       case 'critical':
-        return 'error';
       case 'high':
         return 'error';
       case 'medium':
@@ -269,40 +314,56 @@ export default function Dashboard() {
       location.toLowerCase().includes(searchLower) ||
       type.toLowerCase().includes(searchLower)
     );
+  }).filter((incident) => {
+    if (statusFilter === 'all') return true;
+    return incident.status === statusFilter;
+  }).filter((incident) => {
+    if (severityFilter === 'all') return true;
+    return incident.severity === severityFilter;
   });
 
-  const handleStatusUpdate = async () => {
-    if (!statusUpdateIncident || !newStatus) return;
-
+  const handleStatusUpdate = async (incidentId: string) => {
+    if (!newStatus) return;
+    
     try {
-      const response = await fetch('/api/incidents', {
+      setStatusUpdateLoading(true);
+      const response = await fetch(`/api/incidents/${incidentId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          id: statusUpdateIncident._id,
-          status: newStatus,
-        }),
+        credentials: 'include',
+        body: JSON.stringify({ status: newStatus }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to update status');
+      let data;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.indexOf("application/json") !== -1) {
+        data = await response.json();
+      } else {
+        // If response is not JSON, get the text and throw it
+        const text = await response.text();
+        throw new Error(`Server error: ${text.slice(0, 200)}`);
       }
 
-      // Update the incident in the local state
-      setIncidents((prevIncidents) =>
-        prevIncidents.map((incident) =>
-          incident._id === statusUpdateIncident._id
-            ? { ...incident, status: newStatus }
-            : incident
-        )
-      );
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update status');
+      }
 
+      // Show success message
+      setSuccess('Incident status updated successfully');
+      
+      // Refresh incidents after update
+      await fetchIncidents();
+      
+      // Reset state
       setStatusUpdateIncident(null);
       setNewStatus('');
     } catch (error) {
       console.error('Error updating status:', error);
+      setError(error.message || 'Failed to update incident status');
+    } finally {
+      setStatusUpdateLoading(false);
     }
   };
 
@@ -323,200 +384,309 @@ export default function Dashboard() {
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <AppBar position="static">
-        <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            Emergency Response Dashboard
-          </Typography>
-          {session?.user?.userType === 'official' && (
-            <Button
-              color="inherit"
-              onClick={() => router.push('/analytics')}
-              startIcon={<AnalyticsIcon />}
-            >
-              Analytics
-            </Button>
-          )}
-          <Button 
-            color="inherit" 
-            onClick={handleLogout}
-          >
-            Logout
-          </Button>
-        </Toolbar>
-      </AppBar>
-
-      {/* Header */}
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="h4" component="h1">
-          Transport Incidents
-        </Typography>
-        <Box>
-          <IconButton onClick={fetchIncidents} sx={{ mr: 1 }} title="Refresh incidents">
-            <RefreshIcon />
-          </IconButton>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => router.push('/incidents/new')}
-          >
-            Report Incident
-          </Button>
-        </Box>
-      </Box>
-
-      {/* Search Bar */}
-      <Paper sx={{ p: 2, mb: 4 }}>
-        <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} md={6}>
-            <TextField
-              fullWidth
-              placeholder="Search by incident type, title, or location..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              InputProps={{
-                endAdornment: (
-                  <IconButton>
-                    <SearchIcon />
-                  </IconButton>
-                ),
-              }}
-            />
-          </Grid>
-        </Grid>
-      </Paper>
-
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-
-      {/* Incidents Timeline */}
-      <Grid container spacing={3}>
-        {filteredIncidents.length === 0 ? (
+    <Box sx={{ flexGrow: 1, bgcolor: '#f5f5f5', minHeight: '100vh', pt: 3 }}>
+      <Container>
+        <Grid container spacing={3}>
           <Grid item xs={12}>
-            <Paper sx={{ p: 3, textAlign: 'center' }}>
-              <Typography variant="h6" color="text.secondary">
-                No incidents found
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <Typography variant="h4" component="h1">
+                Transport Incident Management
               </Typography>
+              <Box>
+                {(session?.user?.userType === 'admin' || session?.user?.userType === 'official') && (
+                  <Button
+                    href="/analytics"
+                    variant="contained"
+                    color="info"
+                    startIcon={<AnalyticsIcon />}
+                    sx={{ mr: 2 }}
+                  >
+                    Analytics
+                  </Button>
+                )}
+                <Button
+                  variant="contained"
+                  color="primary"
+                  startIcon={<AddIcon />}
+                  onClick={() => router.push('/incidents/new')}
+                  sx={{ mr: 2 }}
+                >
+                  New Incident
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={handleLogout}
+                  startIcon={<LogoutIcon />}
+                >
+                  Logout
+                </Button>
+              </Box>
+            </Box>
+          </Grid>
+
+          {/* Filters Section */}
+          <Grid item xs={12}>
+            <Paper 
+              elevation={3}
+              sx={{ 
+                p: 3, 
+                mb: 3, 
+                borderRadius: 2,
+                background: 'linear-gradient(to right, #ffffff, #f3f3f7)'
+              }}
+            >
+              <Grid container spacing={2} alignItems="center">
+                <Grid item xs={12} sm={4}>
+                  <FormControl fullWidth variant="outlined">
+                    <InputLabel>Status Filter</InputLabel>
+                    <Select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      label="Status Filter"
+                    >
+                      <MenuItem value="all">All</MenuItem>
+                      <MenuItem value="pending">Pending</MenuItem>
+                      <MenuItem value="in_progress">In Progress</MenuItem>
+                      <MenuItem value="resolved">Resolved</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <FormControl fullWidth variant="outlined">
+                    <InputLabel>Severity Filter</InputLabel>
+                    <Select
+                      value={severityFilter}
+                      onChange={(e) => setSeverityFilter(e.target.value)}
+                      label="Severity Filter"
+                    >
+                      <MenuItem value="all">All</MenuItem>
+                      <MenuItem value="low">Low</MenuItem>
+                      <MenuItem value="medium">Medium</MenuItem>
+                      <MenuItem value="high">High</MenuItem>
+                      <MenuItem value="critical">Critical</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    fullWidth
+                    startIcon={<AddIcon />}
+                    onClick={() => router.push('/incidents/new')}
+                    sx={{ 
+                      height: '56px',
+                      background: 'linear-gradient(45deg, #1a237e 30%, #283593 90%)',
+                      boxShadow: '0 3px 5px 2px rgba(26, 35, 126, .3)'
+                    }}
+                  >
+                    Report New Incident
+                  </Button>
+                </Grid>
+              </Grid>
             </Paper>
           </Grid>
-        ) : (
-          filteredIncidents.map((incident) => (
-            <Grid item xs={12} key={incident._id}>
-              <Card>
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                    <Typography variant="h6" component="div">
-                      {incident.title}
-                    </Typography>
-                    <Box>
-                      <Chip
-                        label={String(incident.severity || 'Unknown').toUpperCase()}
-                        color={getSeverityColor(incident.severity)}
-                        size="small"
-                        sx={{ mr: 1 }}
-                      />
-                      <Chip
-                        label={String(incident.status || 'Pending').replace('_', ' ').toUpperCase()}
-                        color={getStatusColor(incident.status)}
-                        size="small"
-                      />
-                    </Box>
-                  </Box>
 
-                  {incident.photoUrl && (
-                    <Box sx={{ mb: 2, maxWidth: '100%', overflow: 'hidden' }}>
-                      <img
-                        src={incident.photoUrl}
-                        alt={incident.title}
-                        style={{
-                          width: '100%',
-                          maxHeight: '300px',
-                          objectFit: 'cover',
-                          borderRadius: '4px'
+          {/* Incidents List */}
+          {loading ? (
+            <Grid item xs={12} sx={{ textAlign: 'center', py: 5 }}>
+              <CircularProgress size={60} />
+            </Grid>
+          ) : filteredIncidents.length === 0 ? (
+            <Grid item xs={12}>
+              <Paper 
+                sx={{ 
+                  p: 4, 
+                  textAlign: 'center',
+                  borderRadius: 2,
+                  bgcolor: '#fff'
+                }}
+              >
+                <Typography variant="h6" color="textSecondary">
+                  No incidents found
+                </Typography>
+              </Paper>
+            </Grid>
+          ) : (
+            filteredIncidents.map((incident) => (
+              <Grid item xs={12} key={incident._id}>
+                <Paper 
+                  elevation={3} 
+                  sx={{ 
+                    p: 3, 
+                    mb: 2, 
+                    borderRadius: 2,
+                    '&:hover': {
+                      boxShadow: 6,
+                      transform: 'translateY(-2px)',
+                      transition: 'all 0.3s'
+                    }
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
+                    <Box sx={{ flex: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        <Avatar 
+                          sx={{ 
+                            bgcolor: 'primary.main', 
+                            mr: 2,
+                            width: 48,
+                            height: 48,
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                          }}
+                        >
+                          {incident.reportedBy?.name?.charAt(0) || 'U'}
+                        </Avatar>
+                        <Box>
+                          <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#1a237e' }}>
+                            {incident.reportedBy?.name || 'Unknown User'}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            {incident.reportedBy?.email || 'No email provided'}
+                          </Typography>
+                        </Box>
+                      </Box>
+                      <Typography 
+                        variant="h5" 
+                        sx={{ 
+                          mb: 2,
+                          color: '#2c387e',
+                          fontWeight: 500
+                        }}
+                      >
+                        {incident.title}
+                      </Typography>
+                      {incident.photoUrl && (
+                        <Box sx={{ mb: 2, maxWidth: '100%', overflow: 'hidden', borderRadius: 1 }}>
+                          <img
+                            src={incident.photoUrl}
+                            alt="Incident photo"
+                            style={{
+                              width: '100%',
+                              maxHeight: '300px',
+                              objectFit: 'cover',
+                              borderRadius: '4px'
+                            }}
+                          />
+                        </Box>
+                      )}
+                      <Grid container spacing={2} sx={{ mb: 2 }}>
+                        <Grid item xs={12} sm={6}>
+                          <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center' }}>
+                            <LocationOnIcon sx={{ mr: 1, color: 'primary.main' }} />
+                            {incident.location.address}
+                          </Typography>
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center' }}>
+                            <CategoryIcon sx={{ mr: 1, color: 'primary.main' }} />
+                            {incident.type}
+                          </Typography>
+                        </Grid>
+                      </Grid>
+                      {incident.description && (
+                        <Typography 
+                          color="textSecondary" 
+                          sx={{ 
+                            mb: 2,
+                            p: 2,
+                            bgcolor: '#f5f5f5',
+                            borderRadius: 1
+                          }}
+                        >
+                          {incident.description}
+                        </Typography>
+                      )}
+                    </Box>
+                    <Box sx={{ ml: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <Chip
+                        label={getSeverityText(incident.severity)}
+                        color={getSeverityColor(incident.severity)}
+                        sx={{ 
+                          minWidth: 100,
+                          mb: 1 
+                        }}
+                      />
+                      <Chip
+                        label={incident.status.replace('_', ' ').toUpperCase()}
+                        color={getStatusColor(incident.status)}
+                        sx={{ 
+                          minWidth: 100,
+                          fontWeight: 'bold',
+                          fontSize: '0.9rem'
                         }}
                       />
                     </Box>
-                  )}
-
-                  <Typography color="textSecondary" gutterBottom>
-                    <strong>Location:</strong> {incident.location.address}
-                  </Typography>
-                  <Typography color="textSecondary" gutterBottom>
-                    <strong>Type:</strong> {incident.type}
-                  </Typography>
-                  {incident.description && (
-                    <Typography color="textSecondary" paragraph>
-                      <strong>Description:</strong> {incident.description}
+                  </Box>
+                  <Divider sx={{ my: 2 }} />
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Posted on: {new Date(incident.createdAt).toLocaleDateString()}
                     </Typography>
-                  )}
-                  <Typography variant="body2" color="textSecondary">
-                    Reported by {incident.reportedBy.name} on{' '}
-                    {new Date(incident.createdAt).toLocaleDateString()}
-                  </Typography>
-                </CardContent>
-                <CardActions>
-                  <Button
-                    size="small"
-                    startIcon={<CommentIcon />}
-                    onClick={() => handleCommentClick(incident)}
-                  >
-                    Comments {incident.comments?.length > 0 && `(${incident.comments.length})`}
-                  </Button>
-                  <Button
-                    size="small"
-                    startIcon={<LocalHospital />}
-                    onClick={() => handleFacilitiesClick(incident)}
-                    color="primary"
-                  >
-                    Nearby Facilities
-                  </Button>
-                  {session.user.email === incident.reportedBy.email && (
-                    <Button
-                      size="small"
-                      startIcon={<DeleteIcon />}
-                      color="error"
-                      onClick={() => handleDelete(incident._id)}
-                    >
-                      Delete
-                    </Button>
-                  )}
-                  {session?.user?.userType === 'official' && (
-                    <Button
-                      size="small"
-                      color="primary"
-                      onClick={() => setStatusUpdateIncident(incident)}
-                    >
-                      Update Status
-                    </Button>
-                  )}
-                </CardActions>
-              </Card>
-            </Grid>
-          ))
-        )}
-      </Grid>
-
-      <Box sx={{ mt: 2, mb: 2, display: 'flex', justifyContent: 'center' }}>
-        <Button
-          disabled={page === 1}
-          onClick={() => setPage(p => Math.max(1, p - 1))}
-        >
-          Previous
-        </Button>
-        <Typography sx={{ mx: 2, alignSelf: 'center' }}>
-          Page {page} of {totalPages}
-        </Typography>
-        <Button
-          disabled={page === totalPages}
-          onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-        >
-          Next
-        </Button>
-      </Box>
+                    <Box>
+                      <Button
+                        size="small"
+                        startIcon={<CommentIcon />}
+                        onClick={() => handleCommentClick(incident)}
+                        sx={{ mr: 1 }}
+                      >
+                        Comments
+                      </Button>
+                      <Button
+                        size="small"
+                        startIcon={<LocalHospital />}
+                        onClick={() => handleFacilitiesClick(incident)}
+                        sx={{ mr: 1 }}
+                        variant="contained"
+                        color="info"
+                      >
+                        Nearby Facilities
+                      </Button>
+                      {/* Show delete button for user's own incidents */}
+                      {session?.user?.email === incident.reportedBy.email && (
+                        <Button
+                          size="small"
+                          startIcon={<DeleteIcon />}
+                          onClick={() => handleDelete(incident._id)}
+                          sx={{ mr: 1 }}
+                          variant="contained"
+                          color="error"
+                        >
+                          Delete
+                        </Button>
+                      )}
+                      {/* Show update status button for admin/official */}
+                      {(session?.user?.userType === 'admin' || session?.user?.userType === 'official') && (
+                        <>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="success"
+                            onClick={() => setStatusUpdateIncident(incident)}
+                            sx={{ mr: 1 }}
+                          >
+                            Update Status
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="error"
+                            startIcon={<DeleteIcon />}
+                            onClick={() => handleDelete(incident._id)}
+                          >
+                            Delete
+                          </Button>
+                        </>
+                      )}
+                    </Box>
+                  </Box>
+                </Paper>
+              </Grid>
+            ))
+          )}
+        </Grid>
+      </Container>
 
       {/* Comments Dialog */}
       <Dialog
@@ -595,157 +765,78 @@ export default function Dashboard() {
       >
         <DialogTitle>
           Nearby Facilities - {selectedIncident?.title}
-          <Typography variant="subtitle2" color="text.secondary">
-            Location: {selectedIncident?.location.address}
-          </Typography>
+          {loadingFacilities && (
+            <CircularProgress
+              size={24}
+              sx={{ ml: 2, verticalAlign: 'middle' }}
+            />
+          )}
         </DialogTitle>
-        <DialogContent dividers>
-          {loadingFacilities ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-              <CircularProgress />
-            </Box>
-          ) : (
-            <Grid container spacing={3}>
-              {/* Hospitals */}
-              <Grid item xs={12}>
-                <Typography variant="h6" gutterBottom>
-                  Hospitals
-                </Typography>
-                <List>
-                  {facilities?.hospitals.length === 0 ? (
-                    <ListItem>
-                      <ListItemText primary="No hospitals found in this area" />
-                    </ListItem>
-                  ) : (
-                    facilities?.hospitals.map((hospital) => (
-                      <ListItem key={hospital.id}>
-                        <ListItemText
-                          primary={
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Typography>{hospital.name}</Typography>
-                              <Chip
-                                label={hospital.estimatedDistance}
-                                size="small"
-                                color="primary"
-                              />
-                            </Box>
-                          }
-                          secondary={
-                            <Box>
-                              <Typography variant="body2">
-                                Type: {hospital.type}
-                              </Typography>
-                              <Typography variant="body2">
-                                Location: {hospital.location}
-                              </Typography>
-                              <Typography variant="body2">
-                                Contact: {hospital.contact}
-                              </Typography>
-                              {hospital.ambulanceNumber && (
-                                <Typography variant="body2" color="error">
-                                  Ambulance: {hospital.ambulanceNumber}
-                                </Typography>
-                              )}
-                            </Box>
-                          }
-                        />
-                      </ListItem>
-                    ))
-                  )}
-                </List>
-              </Grid>
+        <DialogContent>
+          {facilities?.hospitals?.length > 0 && (
+            <>
+              <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
+                Hospitals
+              </Typography>
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Name</TableCell>
+                      <TableCell>Contact</TableCell>
+                      <TableCell>Location</TableCell>
+                      <TableCell>Distance</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {facilities.hospitals.map((facility) => (
+                      <TableRow key={facility.id}>
+                        <TableCell>{facility.name}</TableCell>
+                        <TableCell>{facility.contact}</TableCell>
+                        <TableCell>{facility.location}</TableCell>
+                        <TableCell>{facility.estimatedDistance}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </>
+          )}
 
-              {/* Officials */}
-              <Grid item xs={12}>
-                <Typography variant="h6" gutterBottom>
-                  Emergency Officials
-                </Typography>
-                <List>
-                  {facilities?.officials.length === 0 ? (
-                    <ListItem>
-                      <ListItemText primary="No officials found in this area" />
-                    </ListItem>
-                  ) : (
-                    facilities?.officials.map((official) => (
-                      <ListItem key={official.id}>
-                        <ListItemText
-                          primary={
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Typography>{official.name}</Typography>
-                              <Chip
-                                label={`Response: ${official.responseTime}`}
-                                size="small"
-                                color="warning"
-                              />
-                            </Box>
-                          }
-                          secondary={
-                            <Box>
-                              <Typography variant="body2">
-                                Designation: {official.designation}
-                              </Typography>
-                              <Typography variant="body2">
-                                Jurisdiction: {official.jurisdiction}
-                              </Typography>
-                              <Typography variant="body2">
-                                Contact: {official.contact}
-                              </Typography>
-                            </Box>
-                          }
-                        />
-                      </ListItem>
-                    ))
-                  )}
-                </List>
-              </Grid>
+          {facilities?.medicalCamps?.length > 0 && (
+            <>
+              <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
+                Medical Camps
+              </Typography>
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Name</TableCell>
+                      <TableCell>Contact</TableCell>
+                      <TableCell>Location</TableCell>
+                      <TableCell>Distance</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {facilities.medicalCamps.map((facility) => (
+                      <TableRow key={facility.id}>
+                        <TableCell>{facility.name}</TableCell>
+                        <TableCell>{facility.contact}</TableCell>
+                        <TableCell>{facility.location}</TableCell>
+                        <TableCell>{facility.estimatedDistance}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </>
+          )}
 
-              {/* Medical Camps */}
-              <Grid item xs={12}>
-                <Typography variant="h6" gutterBottom>
-                  Medical Camps
-                </Typography>
-                <List>
-                  {facilities?.medicalCamps.length === 0 ? (
-                    <ListItem>
-                      <ListItemText primary="No medical camps found in this area" />
-                    </ListItem>
-                  ) : (
-                    facilities?.medicalCamps.map((camp) => (
-                      <ListItem key={camp.id}>
-                        <ListItemText
-                          primary={
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Typography>{camp.name}</Typography>
-                              <Chip
-                                label={camp.estimatedDistance}
-                                size="small"
-                                color="success"
-                              />
-                            </Box>
-                          }
-                          secondary={
-                            <Box>
-                              <Typography variant="body2">
-                                Location: {camp.location}
-                              </Typography>
-                              <Typography variant="body2">
-                                Capacity: {camp.capacity} people
-                              </Typography>
-                              <Typography variant="body2">
-                                Services: {camp.services?.join(', ')}
-                              </Typography>
-                              <Typography variant="body2">
-                                Contact: {camp.contact}
-                              </Typography>
-                            </Box>
-                          }
-                        />
-                      </ListItem>
-                    ))
-                  )}
-                </List>
-              </Grid>
-            </Grid>
+          {(!facilities?.hospitals?.length && !facilities?.medicalCamps?.length) && (
+            <Typography color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
+              No nearby facilities found
+            </Typography>
           )}
         </DialogContent>
         <DialogActions>
@@ -760,33 +851,86 @@ export default function Dashboard() {
       </Dialog>
 
       {/* Status Update Dialog */}
-      <Dialog
-        open={Boolean(statusUpdateIncident)}
-        onClose={() => setStatusUpdateIncident(null)}
+      <Dialog 
+        open={Boolean(statusUpdateIncident)} 
+        onClose={() => {
+          setStatusUpdateIncident(null);
+          setNewStatus('');
+        }}
       >
         <DialogTitle>Update Incident Status</DialogTitle>
         <DialogContent>
           <FormControl fullWidth sx={{ mt: 2 }}>
-            <InputLabel>Status</InputLabel>
+            <InputLabel>New Status</InputLabel>
             <Select
               value={newStatus}
-              label="Status"
               onChange={(e) => setNewStatus(e.target.value)}
+              label="New Status"
+              disabled={statusUpdateLoading}
             >
               <MenuItem value="pending">Pending</MenuItem>
               <MenuItem value="in_progress">In Progress</MenuItem>
               <MenuItem value="resolved">Resolved</MenuItem>
-              <MenuItem value="rejected">Rejected</MenuItem>
             </Select>
           </FormControl>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setStatusUpdateIncident(null)}>Cancel</Button>
-          <Button onClick={handleStatusUpdate} color="primary">
-            Update
+          <Button 
+            onClick={() => {
+              setStatusUpdateIncident(null);
+              setNewStatus('');
+            }}
+            disabled={statusUpdateLoading}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={() => handleStatusUpdate(statusUpdateIncident._id)}
+            variant="contained" 
+            color="primary"
+            disabled={!newStatus || statusUpdateLoading}
+          >
+            {statusUpdateLoading ? (
+              <>
+                <CircularProgress size={20} sx={{ mr: 1 }} />
+                Updating...
+              </>
+            ) : (
+              'Update'
+            )}
           </Button>
         </DialogActions>
       </Dialog>
-    </Container>
+
+      {/* Success/Error Messages */}
+      {success && (
+        <Alert 
+          severity="success" 
+          sx={{ 
+            position: 'fixed', 
+            bottom: 16, 
+            right: 16, 
+            zIndex: 9999 
+          }}
+          onClose={() => setSuccess('')}
+        >
+          {success}
+        </Alert>
+      )}
+      {error && (
+        <Alert 
+          severity="error" 
+          sx={{ 
+            position: 'fixed', 
+            bottom: 16, 
+            right: 16, 
+            zIndex: 9999 
+          }}
+          onClose={() => setError('')}
+        >
+          {error}
+        </Alert>
+      )}
+    </Box>
   );
 }

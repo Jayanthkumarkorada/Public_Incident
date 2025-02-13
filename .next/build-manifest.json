@@ -27,6 +27,11 @@
       "static/chunks/main.js",
       "static/chunks/pages/analytics.js"
     ],
+    "/auth/signin": [
+      "static/chunks/webpack.js",
+      "static/chunks/main.js",
+      "static/chunks/pages/auth/signin.js"
+    ],
     "/dashboard": [
       "static/chunks/webpack.js",
       "static/chunks/main.js",
