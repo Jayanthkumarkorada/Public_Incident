@@ -45,6 +45,11 @@ export default async function handler(
         ];
       }
 
+      // Add user filter if userOnly parameter is true
+      if (req.query.userOnly === 'true') {
+        query.reportedBy = { email: session.user.email };
+      }
+
       // Get total count for pagination
       const total = await db.collection('incidents').countDocuments(query);
 

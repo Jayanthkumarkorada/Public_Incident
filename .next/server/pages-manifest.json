@@ -2,11 +2,11 @@
   "/_app": "pages/_app.js",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
-  "/dashboard": "pages/dashboard.js",
   "/api/incidents": "pages/api/incidents.js",
-  "/api/incidents/[id]": "pages/api/incidents/[id].js",
-  "/api/analytics": "pages/api/analytics.js",
-  "/api/auth/[...nextauth]": "pages/api/auth/[...nextauth].js",
+  "/dashboard": "pages/dashboard.js",
+  "/analytics": "pages/analytics.js",
   "/incidents/new": "pages/incidents/new.js",
-  "/analytics": "pages/analytics.js"
+  "/auth/signin": "pages/auth/signin.js",
+  "/api/analytics": "pages/api/analytics.js",
+  "/api/auth/[...nextauth]": "pages/api/auth/[...nextauth].js"
 }

@@ -10,7 +10,20 @@ import {
   Paper,
   Alert,
   CircularProgress,
+  Card,
+  CardContent,
+  Grid,
 } from '@mui/material';
+
+interface Incident {
+  _id: string;
+  title: string;
+  description: string;
+  createdAt: string;
+  location: {
+    address: string;
+  };
+}
 
 export default function Profile() {
   const { data: session, status } = useSession();
@@ -18,12 +31,35 @@ export default function Profile() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [userIncidents, setUserIncidents] = useState<Incident[]>([]);
+  const [isLoadingIncidents, setIsLoadingIncidents] = useState(true);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.replace('/auth/signin');
     }
   }, [status, router]);
+
+  useEffect(() => {
+    async function fetchUserIncidents() {
+      try {
+        const response = await fetch('/api/incidents?userOnly=true');
+        if (!response.ok) {
+          throw new Error('Failed to fetch incidents');
+        }
+        const data = await response.json();
+        setUserIncidents(data.incidents);
+      } catch (error) {
+        console.error('Error fetching incidents:', error);
+      } finally {
+        setIsLoadingIncidents(false);
+      }
+    }
+
+    if (session) {
+      fetchUserIncidents();
+    }
+  }, [session]);
 
   if (status === 'loading') {
     return (
@@ -89,6 +125,8 @@ export default function Profile() {
         <Typography variant="h4" component="h1" gutterBottom>
           Profile
         </Typography>
+        
+        {/* User Information Section */}
         <Paper sx={{ p: 3, mb: 3 }}>
           <Typography variant="h6" gutterBottom>
             User Information
@@ -103,6 +141,44 @@ export default function Profile() {
           </Box>
         </Paper>
 
+        {/* User's Incidents Section */}
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Your Reported Incidents
+          </Typography>
+          {isLoadingIncidents ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+              <CircularProgress />
+            </Box>
+          ) : userIncidents.length > 0 ? (
+            <Grid container spacing={2}>
+              {userIncidents.map((incident) => (
+                <Grid item xs={12} key={incident._id}>
+                  <Card>
+                    <CardContent>
+                      <Typography variant="h6" gutterBottom>
+                        {incident.title}
+                      </Typography>
+                      <Typography color="textSecondary" gutterBottom>
+                        Location: {incident.location.address}
+                      </Typography>
+                      <Typography variant="body2">
+                        {incident.description}
+                      </Typography>
+                      <Typography variant="caption" color="textSecondary">
+                        Reported on: {new Date(incident.createdAt).toLocaleDateString()}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          ) : (
+            <Typography>You haven't reported any incidents yet.</Typography>
+          )}
+        </Paper>
+
+        {/* Password Change Section */}
         <Paper sx={{ p: 3 }}>
           <Typography variant="h6" gutterBottom>
             Change Password

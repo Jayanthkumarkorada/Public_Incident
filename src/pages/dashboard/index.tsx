@@ -23,8 +23,6 @@ import {
   ListItemText,
   Divider,
   Alert,
-  AppBar,
-  Toolbar,
   FormControl,
   InputLabel,
   Select,
@@ -386,46 +384,47 @@ export default function Dashboard() {
   }
 
   return (
-    <Box sx={{ flexGrow: 1, bgcolor: '#f5f5f5', minHeight: '100vh' }}>
-      <AppBar position="fixed" sx={{ bgcolor: '#1a237e' }}>
-        <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            Transport Incident Management
-          </Typography>
-          {(session?.user?.userType === 'admin' || session?.user?.userType === 'official') && (
-            <Button
-              href="/analytics"
-              variant="contained"
-              color="info"
-              startIcon={<AnalyticsIcon />}
-              sx={{ mr: 2, bgcolor: '#0d47a1' }}
-            >
-              Analytics
-            </Button>
-          )}
-          <Button
-            onClick={handleLogout}
-            variant="contained"
-            color="error"
-            startIcon={<LogoutIcon />}
-            sx={{ mr: 2 }}
-          >
-            Logout
-          </Button>
-          <Button
-            href="/profile"
-            variant="contained"
-            color="secondary"
-            startIcon={<PersonIcon />}
-          >
-            Profile
-          </Button>
-        </Toolbar>
-      </AppBar>
-      <Toolbar /> {/* This is for spacing below AppBar */}
-      
-      <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+    <Box sx={{ flexGrow: 1, bgcolor: '#f5f5f5', minHeight: '100vh', pt: 3 }}>
+      <Container>
         <Grid container spacing={3}>
+          <Grid item xs={12}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <Typography variant="h4" component="h1">
+                Transport Incident Management
+              </Typography>
+              <Box>
+                {(session?.user?.userType === 'admin' || session?.user?.userType === 'official') && (
+                  <Button
+                    href="/analytics"
+                    variant="contained"
+                    color="info"
+                    startIcon={<AnalyticsIcon />}
+                    sx={{ mr: 2 }}
+                  >
+                    Analytics
+                  </Button>
+                )}
+                <Button
+                  variant="contained"
+                  color="primary"
+                  startIcon={<AddIcon />}
+                  onClick={() => router.push('/incidents/new')}
+                  sx={{ mr: 2 }}
+                >
+                  New Incident
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={handleLogout}
+                  startIcon={<LogoutIcon />}
+                >
+                  Logout
+                </Button>
+              </Box>
+            </Box>
+          </Grid>
+
           {/* Filters Section */}
           <Grid item xs={12}>
             <Paper 
@@ -835,7 +834,7 @@ export default function Dashboard() {
           )}
 
           {(!facilities?.hospitals?.length && !facilities?.medicalCamps?.length) && (
-            <Typography color="text.secondary" sx={{ textAlign: 'center', py: 3 }}>
+            <Typography color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
               No nearby facilities found
             </Typography>
           )}
